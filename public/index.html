@@ -10,6 +10,23 @@
 
 <body>
 
+    <div id="floatingTimer" class="floating-timer hidden">⏳ <span id="timeVal">90</span>s</div>
+
+    <div id="screen-invite" class="screen hidden">
+        <div class="logo-container">
+            <h1 class="game-title">ChainWords</h1>
+        </div>
+        <div class="glass-card text-center mt-10">
+            <h2 class="neon-text" style="font-size: 2rem; margin-bottom: 10px;">Tu es invité(e) !</h2>
+            <p style="font-size: 1.1rem; color: #cbd5e1;">Rejoins le salon de <span id="inviteHostName"
+                    class="neon-text" style="font-weight: bold; font-size: 1.3rem;">...</span></p>
+
+            <input type="text" id="invitePseudoInput" placeholder="Ton Pseudo..." class="game-input glass-input mt-10"
+                maxlength="15">
+            <button id="btnRejoindreInvite" class="btn primary-btn mt-10">Rejoindre la partie</button>
+        </div>
+    </div>
+
     <div id="screen-home" class="screen active">
         <div class="logo-container">
             <h1 class="game-title">ChainWords</h1>
@@ -28,8 +45,10 @@
     </div>
 
     <div id="screen-lobby" class="screen hidden">
-        <div class="header-glass">
-            <h2>Salon : <span id="lobbyCode" class="neon-text"></span></h2>
+        <div class="header-glass split">
+            <h2>Salon : <span id="lobbyCode" class="neon-text" style="margin-right: 15px;"></span></h2>
+            <button id="btnCopyLink" class="btn secondary-btn"
+                style="width: auto; padding: 10px 20px; font-size: 0.9rem;">📋 Copier l'invitation</button>
         </div>
         <div class="lobby-layout">
             <div class="glass-card players-card">
@@ -39,16 +58,17 @@
             <div class="glass-card settings-card">
                 <h3>Paramètres</h3>
                 <div id="hostSettings" class="hidden">
-                    <label>Génération :</label>
+                    <label>Origine des mots :</label>
                     <select id="modeSelect" class="game-input glass-input">
                         <option value="auto">Automatique</option>
-                        <option value="custom">Personnalisé</option>
+                        <option value="custom">Tour par tour (Personnalisé)</option>
                     </select>
-                    <div id="customWordsInputs" class="hidden">
-                        <input type="text" id="motDebut" placeholder="Début" class="game-input glass-input">
-                        <input type="text" id="motMilieu" placeholder="Milieu" class="game-input glass-input">
-                        <input type="text" id="motFin" placeholder="Fin" class="game-input glass-input">
-                    </div>
+
+                    <label class="checkbox-container mt-10">
+                        <input type="checkbox" id="contrainteCheck">
+                        Activer une contrainte (Mode Hardcore)
+                    </label>
+
                     <button id="btnLancer" class="btn success-btn mt-10">Lancer la Manche</button>
                 </div>
                 <div id="guestMessage">
@@ -61,25 +81,39 @@
     <div id="screen-game" class="screen hidden">
         <div class="header-glass split">
             <h3>Salon: <span id="gameCode" class="neon-text"></span></h3>
-            <div id="gamePhase" class="phase-badge">Phase: Remplissage</div>
+            <div id="gamePhase" class="phase-badge">Phase</div>
         </div>
 
-        <div id="filling-section" class="glass-card game-board">
-            <h2>Remplis ta chaîne !</h2>
-            <div class="chain-timeline" id="myChainContainer"></div>
-            <button id="btnValiderChaine" class="btn primary-btn mt-10">J'ai fini !</button>
+        <div id="custom-selection-section" class="glass-card game-board hidden text-center" style="max-width: 600px;">
+            <h2 class="neon-text">Choix des jalons</h2>
+            <p id="customHelperText" class="helper-text"></p>
+            <div id="myCustomInputArea" class="hidden mt-10">
+                <input type="text" id="customWordInput" placeholder="Tape ton mot imposé..."
+                    class="game-input glass-input text-center">
+                <button id="btnSoumettreCustom" class="btn primary-btn">Imposer ce mot</button>
+            </div>
+        </div>
+
+        <div id="filling-section" class="glass-card game-board hidden">
+            <h2 class="text-center">Remplis ta chaîne !</h2>
+            <div id="contrainteBanner" class="constraint-banner hidden"></div>
+            <div class="path-container" id="myChainContainer"></div>
+            <button id="btnValiderChaine" class="btn primary-btn mt-10"
+                style="max-width: 400px; margin-left: auto; margin-right: auto; display: block;">J'ai fini !</button>
         </div>
 
         <div id="voting-section" class="glass-card game-board hidden">
-            <h2 id="voteTitle">Le Tribunal</h2>
-            <p class="helper-text" id="voteHelper"></p>
-            <div class="chain-timeline" id="voteChainContainer"></div>
+            <h2 id="voteTitle" class="text-center">Le Tribunal</h2>
+            <p class="helper-text text-center" id="voteHelper"></p>
+            <div class="path-container" id="voteChainContainer"></div>
+            <p id="voteStatus" class="helper-text text-center"
+                style="margin-top: 30px; font-weight:bold; color:#f59e0b;">⏳ En attente des votes...</p>
+        </div>
 
-            <div id="hostActionsPanel" class="host-actions hidden">
-                <p class="helper-text" style="margin-bottom: 10px;">En attente des votes...</p>
-                <button id="btnHostSuivant" class="btn warning-btn" disabled>Passer au joueur suivant ➔</button>
-                <button id="btnSkipAFK" class="btn secondary-btn">Skip Anti-AFK (Forcer la suite)</button>
-            </div>
+        <div id="cerveau-section" class="glass-card game-board hidden text-center" style="max-width: 800px;">
+            <h2 class="neon-text">🧠 Cerveau Galactique</h2>
+            <p class="helper-text">Votez pour la chaîne la plus drôle ou créative ! (+3 pts)</p>
+            <div id="cerveauCardsContainer" class="cerveau-grid mt-10"></div>
         </div>
     </div>
 
@@ -94,9 +128,17 @@
     <div id="score-overlay" class="overlay hidden">
         <div class="glass-card text-center victory-card">
             <h2 class="neon-text">Fin de la Manche !</h2>
-            <div class="divider"><span>Résultats</span></div>
+            <div class="cerveau-winner-box mt-10">
+                <h3>🏆 Prix du Cerveau Galactique</h3>
+                <span id="cerveauWinnerName" class="neon-text" style="font-size:1.5rem; font-weight:bold;"></span>
+            </div>
+            <div class="divider"><span>Classement Général</span></div>
             <ul id="listeScoresFin" class="glass-list final-scores"></ul>
-            <button id="btnRetourLobby" class="btn primary-btn mt-10">Retour au salon</button>
+
+            <div class="mt-10">
+                <button id="btnProchaineManche" class="btn success-btn hidden">Lancer la Prochaine Manche</button>
+                <p id="attenteHostFin" class="waiting-text hidden">En attente du chef de salon pour la suite...</p>
+            </div>
         </div>
     </div>
 
