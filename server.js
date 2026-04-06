@@ -42,9 +42,7 @@ function verifierSiToutLeMondeAVote(salon) {
         totalVotesCast += Object.keys(salon.votesEnCours[idx]).length;
     }
     const nbJoueurs = Object.keys(salon.joueurs).length;
-    // On attend les votes de tout le monde SAUF le joueur évalué
     const expectedVotes = (nbJoueurs > 1 ? nbJoueurs - 1 : 0) * salon.indicesVotables.length;
-
     return expectedVotes === 0 || totalVotesCast >= expectedVotes;
 }
 
@@ -76,7 +74,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('update_config', ({ codeSalon, config }) => {
-        if (salons[codeSalon] && salons[codeSalon].createur === socket.id) salons[codeSalon].config = config;
+        if (salons[codeSalon] && salons[codeSalon].createur === socket.id) {
+            salons[codeSalon].config = config;
+        }
     });
 
     socket.on('lancer_partie', (codeSalon) => {
@@ -132,7 +132,7 @@ io.on('connection', (socket) => {
         salon.votesEnCours = {};
         salon.indicesVotables.forEach(index => { salon.votesEnCours[index] = {}; });
 
-        const toutLeMondeAVote = verifierSiToutLeMondeAVote(salon); // Gère le cas où le joueur teste seul
+        const toutLeMondeAVote = verifierSiToutLeMondeAVote(salon);
 
         io.to(codeSalon).emit('tour_de_vote', {
             joueurEvalueId: joueurEvalueId, pseudoEvalue: joueurEvalue.pseudo,
@@ -148,10 +148,8 @@ io.on('connection', (socket) => {
 
             if (socket.id !== joueurEvalueId) {
                 salon.votesEnCours[index][socket.id] = vote;
-
                 const toutLeMondeAVote = verifierSiToutLeMondeAVote(salon);
 
-                // Envoyer les nouveaux totaux ET l'état "complet"
                 io.to(codeSalon).emit('maj_votes_direct', {
                     totaux: getTotauxVotes(salon),
                     toutLeMondeAVote: toutLeMondeAVote
@@ -160,7 +158,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Le chef décide de passer à la suite (que ce soit naturel ou un Skip AFK)
     socket.on('host_suivant', (codeSalon) => {
         const salon = salons[codeSalon];
         if (salon && salon.createur === socket.id && salon.etat === 'vote') {
@@ -177,7 +174,6 @@ io.on('connection', (socket) => {
         let perfect = true;
         for (const index of salon.indicesVotables) {
             const res = totaux[index];
-            // Si personne n'a voté (Skip AFK), c'est refusé par défaut
             if (res.pour === 0 && res.contre === 0) {
                 perfect = false;
                 continue;
@@ -196,6 +192,8 @@ io.on('connection', (socket) => {
         }
     }
 });
+
+// Le port est prêt pour Render.com
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Serveur lancé sur le port ${PORT}`);

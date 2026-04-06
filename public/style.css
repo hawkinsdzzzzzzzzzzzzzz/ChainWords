@@ -144,12 +144,11 @@ body {
     letter-spacing: 1px;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
     transform: translateY(-3px);
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* NOUVEAU: Etat grisé inactif */
 .btn:disabled {
     background: #334155 !important;
     color: #64748b !important;
@@ -169,7 +168,7 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.secondary-btn:hover {
+.secondary-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.2);
 }
 

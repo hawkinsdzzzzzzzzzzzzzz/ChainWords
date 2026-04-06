@@ -15,24 +15,56 @@ function addEnterListener(inputId, buttonId) {
 addEnterListener('pseudoInput', 'btnCreer');
 addEnterListener('roomInput', 'btnRejoindre');
 
+// On a ajouté une alerte si la case est vide pour éviter que le bouton ne fasse "rien"
 el('btnCreer').addEventListener('click', () => {
-    monPseudo = el('pseudoInput').value;
-    if (monPseudo) socket.emit('creer_salon', monPseudo);
+    monPseudo = el('pseudoInput').value.trim();
+    if (!monPseudo) {
+        alert("⚠️ Tu dois écrire un pseudo pour créer un salon !");
+        return;
+    }
+    socket.emit('creer_salon', monPseudo);
 });
 
 el('btnRejoindre').addEventListener('click', () => {
-    monPseudo = el('pseudoInput').value;
-    monCodeSalon = el('roomInput').value.toUpperCase();
-    if (monPseudo && monCodeSalon) socket.emit('rejoindre_salon', { pseudo: monPseudo, codeSalon: monCodeSalon });
+    monPseudo = el('pseudoInput').value.trim();
+    monCodeSalon = el('roomInput').value.trim().toUpperCase();
+    if (!monPseudo || !monCodeSalon) {
+        alert("⚠️ Remplis ton pseudo et le code du salon !");
+        return;
+    }
+    socket.emit('rejoindre_salon', { pseudo: monPseudo, codeSalon: monCodeSalon });
 });
 
 el('modeSelect').addEventListener('change', () => {
     if (el('modeSelect').value === 'custom') show('customWordsInputs');
     else hide('customWordsInputs');
-    socket.emit('update_config', { codeSalon: monCodeSalon, config: { mode: el('modeSelect').value, motsPerso: [el('motDebut').value, el('motMilieu').value, el('motFin').value] } });
+
+    socket.emit('update_config', {
+        codeSalon: monCodeSalon,
+        config: {
+            mode: el('modeSelect').value,
+            motsPerso: [el('motDebut').value, el('motMilieu').value, el('motFin').value]
+        }
+    });
 });
 
-el('btnLancer').addEventListener('click', () => { socket.emit('lancer_partie', monCodeSalon); });
+el('btnLancer').addEventListener('click', () => {
+    if (el('modeSelect').value === 'custom') {
+        const debut = el('motDebut').value.trim();
+        const milieu = el('motMilieu').value.trim();
+        const fin = el('motFin').value.trim();
+
+        if (!debut || !milieu || !fin) {
+            return alert("Remplis les 3 mots pour lancer la partie !");
+        }
+
+        socket.emit('update_config', {
+            codeSalon: monCodeSalon,
+            config: { mode: 'custom', motsPerso: [debut, milieu, fin] }
+        });
+    }
+    socket.emit('lancer_partie', monCodeSalon);
+});
 
 socket.on('salon_cree', code => { monCodeSalon = code; suisHost = true; afficherLobby(); });
 socket.on('salon_rejoint', code => { monCodeSalon = code; suisHost = false; afficherLobby(); });
@@ -111,13 +143,9 @@ socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotabl
         el('voteHelper').innerText = "Clique sur Oui ou Non. Ton vote est envoyé instantanément.";
     }
 
-    // GESTION DU PANNEAU HOST
     if (suisHost) {
         show('hostActionsPanel');
-        // On désactive ou active selon si tout le monde a déjà voté (ex: joueur seul)
         el('btnHostSuivant').disabled = !toutLeMondeAVote;
-
-        // Mettre à jour le texte d'aide au-dessus du bouton
         if (toutLeMondeAVote) {
             el('hostActionsPanel').querySelector('p').innerText = "✅ Tous les votes sont enregistrés !";
         } else {
@@ -169,7 +197,6 @@ socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotabl
     });
 });
 
-// CLICS DU CHEF
 el('btnHostSuivant').addEventListener('click', () => {
     socket.emit('host_suivant', monCodeSalon);
 });
@@ -180,7 +207,6 @@ el('btnSkipAFK').addEventListener('click', () => {
     }
 });
 
-// MAJ DES VOTES ET DU BOUTON HOST
 socket.on('maj_votes_direct', ({ totaux, toutLeMondeAVote }) => {
     for (const index in totaux) {
         const spanPour = el(`pour-${index}`);
