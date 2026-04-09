@@ -52,6 +52,23 @@ function verifierSiToutLeMondeAVote(salon) {
     return expectedVotes === 0 || totalVotesCast >= expectedVotes;
 }
 
+// Récupère les pseudos de ceux qui n'ont pas encore fini de voter au tribunal
+function getPseudosEnAttenteTribunal(salon) {
+    const joueurEvalueId = salon.ordreVote[salon.indexVoteCourant];
+    const votantsAttendus = Object.keys(salon.joueurs).filter(id => id !== joueurEvalueId);
+    const enAttente = votantsAttendus.filter(id => {
+        return salon.indicesVotables.some(idx => !salon.votesEnCours[idx] || !salon.votesEnCours[idx][id]);
+    });
+    return enAttente.map(id => salon.joueurs[id].pseudo);
+}
+
+// Récupère les pseudos de ceux qui n'ont pas encore voté pour le cerveau galactique
+function getPseudosEnAttenteCerveau(salon) {
+    const votantsAttendus = Object.keys(salon.joueurs);
+    const enAttente = votantsAttendus.filter(id => !salon.votesCerveau[id]);
+    return enAttente.map(id => salon.joueurs[id].pseudo);
+}
+
 function clearSalonTimer(salon) {
     if (salon.intervalTimer) {
         clearInterval(salon.intervalTimer);
@@ -80,7 +97,7 @@ io.on('connection', (socket) => {
             config: { mode: 'auto', contrainte: false },
             chaineDeBase: [], indicesVotables: [], ordreVote: [],
             indexVoteCourant: 0, votesEnCours: {}, temps: 0,
-            motsPersoEnCours: [], etapesPerso: ["le mot de DÉBUT", "le mot du MILIEU", "le mot de FIN"],
+            motsPersoEnCours: [], etapesPerso: ["le 1er mot mystère", "le 2ème mot mystère", "le 3ème mot mystère"],
             joueurChoixCourant: null
         };
         salons[code].joueurs[socket.id] = { pseudo: pseudo, score: 0, chaineJoueur: [], aFini: false };
@@ -107,7 +124,6 @@ io.on('connection', (socket) => {
     socket.on('lancer_partie', (codeSalon) => {
         const salon = salons[codeSalon];
         if (salon && salon.createur === socket.id) {
-            // Ne réinitialise PAS les scores, juste l'état de la manche
             for (let id in salon.joueurs) {
                 salon.joueurs[id].aFini = false;
                 salon.joueurs[id].chaineJoueur = [];
@@ -118,6 +134,7 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- PHASE 1.5 : CHOIX DES MOTS (MYSTÈRES & ALÉATOIRES) ---
     function demarrerChoixPersonnalise(codeSalon) {
         const salon = salons[codeSalon];
         salon.etat = 'choix_custom';
@@ -128,12 +145,16 @@ io.on('connection', (socket) => {
     function passerAuChoixCustom(codeSalon) {
         const salon = salons[codeSalon];
         if (salon.motsPersoEnCours.length === 3) {
-            lancerPhaseRemplissage(codeSalon, salon.motsPersoEnCours);
+            // LES MOTS SONT MÉLANGÉS ALÉATOIREMENT AVANT LA PARTIE
+            const motsMelanges = [...salon.motsPersoEnCours].sort(() => Math.random() - 0.5);
+            lancerPhaseRemplissage(codeSalon, motsMelanges);
             return;
         }
 
         const joueursIds = Object.keys(salon.joueurs);
-        salon.joueurChoixCourant = joueursIds[salon.motsPersoEnCours.length % joueursIds.length];
+        // Joueur choisi aléatoirement pour écrire le mot
+        const indexAleatoire = Math.floor(Math.random() * joueursIds.length);
+        salon.joueurChoixCourant = joueursIds[indexAleatoire];
 
         io.to(codeSalon).emit('tour_choix_custom', {
             joueurId: salon.joueurChoixCourant,
@@ -185,7 +206,7 @@ io.on('connection', (socket) => {
 
             if (salon.temps === 0) {
                 io.to(codeSalon).emit('temps_ecoule');
-            } else if (salon.temps <= -2) { // Sécurité anti-AFK (2 secondes après le 0)
+            } else if (salon.temps <= -2) {
                 for (let id in salon.joueurs) {
                     if (!salon.joueurs[id].aFini) {
                         salon.joueurs[id].chaineJoueur = [...salon.chaineDeBase].map(w => w || "AFK ❌");
@@ -233,11 +254,12 @@ io.on('connection', (socket) => {
         io.to(codeSalon).emit('tour_de_vote', {
             joueurEvalueId: joueurEvalueId, pseudoEvalue: joueurEvalue.pseudo,
             chaine: joueurEvalue.chaineJoueur, indicesVotables: salon.indicesVotables,
-            toutLeMondeAVote: toutLeMondeAVote
+            toutLeMondeAVote: toutLeMondeAVote,
+            pseudosEnAttente: getPseudosEnAttenteTribunal(salon) // On envoie qui on attend
         });
 
         clearSalonTimer(salon);
-        salon.temps = 60; // 60 secondes pour voter
+        salon.temps = 60;
         salon.intervalTimer = setInterval(() => {
             salon.temps--;
             if (salon.temps >= 0) io.to(codeSalon).emit('timer_tick', salon.temps);
@@ -256,12 +278,14 @@ io.on('connection', (socket) => {
             if (socket.id !== joueurEvalueId) {
                 salon.votesEnCours[index][socket.id] = vote;
                 const done = verifierSiToutLeMondeAVote(salon);
-                io.to(codeSalon).emit('maj_votes_direct', { totaux: getTotauxVotes(salon), toutLeMondeAVote: done });
 
-                // SI TOUT LE MONDE A VOTÉ -> LE TIMER TOMBE A 3 SECONDES
-                if (done && salon.temps > 3) {
-                    salon.temps = 3;
-                }
+                io.to(codeSalon).emit('maj_votes_direct', {
+                    totaux: getTotauxVotes(salon),
+                    toutLeMondeAVote: done,
+                    pseudosEnAttente: getPseudosEnAttenteTribunal(salon) // MAJ de la liste
+                });
+
+                if (done && salon.temps > 3) salon.temps = 3;
             }
         }
     });
@@ -297,6 +321,8 @@ io.on('connection', (socket) => {
         }
 
         io.to(codeSalon).emit('debut_vote_cerveau', chainesData);
+        // On envoie directement la liste de tous ceux qui doivent voter
+        io.to(codeSalon).emit('maj_attente_cerveau', getPseudosEnAttenteCerveau(salon));
 
         clearSalonTimer(salon);
         salon.temps = 45;
@@ -318,11 +344,10 @@ io.on('connection', (socket) => {
             const nbVotants = Object.keys(salon.votesCerveau).length;
             const nbJoueurs = Object.keys(salon.joueurs).length;
 
-            if (nbVotants >= nbJoueurs && salon.temps > 3) {
-                salon.temps = 3; // Tombe à 3s si tout le monde a voté
-            } else if (nbVotants < nbJoueurs) {
-                socket.emit('attente_autres_joueurs');
-            }
+            if (nbVotants >= nbJoueurs && salon.temps > 3) salon.temps = 3;
+
+            // Mise à jour de ceux qui n'ont pas encore cliqué
+            io.to(codeSalon).emit('maj_attente_cerveau', getPseudosEnAttenteCerveau(salon));
         }
     });
 
@@ -343,14 +368,19 @@ io.on('connection', (socket) => {
                 maxVotes = compteVotes[id];
                 vainqueursIds = [id];
             } else if (compteVotes[id] === maxVotes) {
-                vainqueursIds.push(id);
+                vainqueursIds.push(id); // Plusieurs joueurs ont le même score
             }
         }
 
-        let nomsVainqueurs = "Personne (ou égalité parfaite)";
+        let nomsVainqueurs = "Personne";
         if (maxVotes > 0) {
-            nomsVainqueurs = vainqueursIds.map(id => salon.joueurs[id].pseudo).join(" & ");
-            vainqueursIds.forEach(id => { salon.joueurs[id].score += 3; });
+            // S'il y a égalité parfaite, on tire un seul gagnant au sort parmi eux !
+            if (vainqueursIds.length > 1) {
+                const gagnantAleatoire = vainqueursIds[Math.floor(Math.random() * vainqueursIds.length)];
+                vainqueursIds = [gagnantAleatoire];
+            }
+            nomsVainqueurs = salon.joueurs[vainqueursIds[0]].pseudo;
+            salon.joueurs[vainqueursIds[0]].score += 3; // +3 points au grand vainqueur
         }
 
         salon.etat = 'attente';

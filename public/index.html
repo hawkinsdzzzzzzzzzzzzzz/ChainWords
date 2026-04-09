@@ -85,12 +85,12 @@
         </div>
 
         <div id="custom-selection-section" class="glass-card game-board hidden text-center" style="max-width: 600px;">
-            <h2 class="neon-text">Choix des jalons</h2>
+            <h2 class="neon-text">Phase de création</h2>
             <p id="customHelperText" class="helper-text"></p>
             <div id="myCustomInputArea" class="hidden mt-10">
                 <input type="text" id="customWordInput" placeholder="Tape ton mot imposé..."
                     class="game-input glass-input text-center">
-                <button id="btnSoumettreCustom" class="btn primary-btn">Imposer ce mot</button>
+                <button id="btnSoumettreCustom" class="btn primary-btn">Envoyer le mot secret</button>
             </div>
         </div>
 
@@ -107,13 +107,15 @@
             <p class="helper-text text-center" id="voteHelper"></p>
             <div class="path-container" id="voteChainContainer"></div>
             <p id="voteStatus" class="helper-text text-center"
-                style="margin-top: 30px; font-weight:bold; color:#f59e0b;">⏳ En attente des votes...</p>
+                style="margin-top: 30px; font-weight:bold; color:#f59e0b; font-size:1.1rem;"></p>
         </div>
 
         <div id="cerveau-section" class="glass-card game-board hidden text-center" style="max-width: 800px;">
             <h2 class="neon-text">🧠 Cerveau Galactique</h2>
             <p class="helper-text">Votez pour la chaîne la plus drôle ou créative ! (+3 pts)</p>
             <div id="cerveauCardsContainer" class="cerveau-grid mt-10"></div>
+            <p id="cerveauVoteStatus" class="helper-text text-center mt-10"
+                style="font-weight:bold; color:#f59e0b; font-size:1.1rem;"></p>
         </div>
     </div>
 

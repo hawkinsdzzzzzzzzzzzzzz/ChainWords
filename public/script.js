@@ -9,7 +9,6 @@ const el = id => document.getElementById(id);
 const show = id => el(id).classList.remove('hidden');
 const hide = id => el(id).classList.add('hidden');
 
-// === GESTION DE TOUS LES ECRANS POUR EVITER LES BUGS ===
 function cacherTout() {
     hide('screen-home'); hide('screen-invite'); hide('screen-lobby');
     hide('screen-game'); hide('wait-overlay'); hide('score-overlay');
@@ -25,7 +24,6 @@ addEnterListener('roomInput', 'btnRejoindre');
 addEnterListener('customWordInput', 'btnSoumettreCustom');
 addEnterListener('invitePseudoInput', 'btnRejoindreInvite');
 
-// === GESTION DE L'INVITATION PAR LIEN ===
 const urlParams = new URLSearchParams(window.location.search);
 const inviteCode = urlParams.get('room');
 
@@ -51,7 +49,6 @@ el('btnRejoindreInvite').addEventListener('click', () => {
     socket.emit('rejoindre_salon', { pseudo: monPseudo, codeSalon: monCodeSalon });
 });
 
-// === ACCUEIL CLASSIQUE ===
 el('btnCreer').addEventListener('click', () => {
     monPseudo = el('pseudoInput').value.trim();
     if (!monPseudo) return alert("⚠️ Tu dois écrire un pseudo !");
@@ -65,7 +62,6 @@ el('btnRejoindre').addEventListener('click', () => {
     socket.emit('rejoindre_salon', { pseudo: monPseudo, codeSalon: monCodeSalon });
 });
 
-// === LOBBY ===
 function envoyerConfig() {
     socket.emit('update_config', {
         codeSalon: monCodeSalon,
@@ -105,19 +101,18 @@ socket.on('mise_a_jour_lobby', ({ joueurs, createur }) => {
     for (const id in joueurs) el('listeJoueursLobby').innerHTML += `<li><span>${joueurs[id].pseudo}</span> <span>${id === createur ? "👑" : ""}</span></li>`;
 });
 
-// === PHASE CUSTOM ===
 socket.on('tour_choix_custom', ({ joueurId, pseudo, etapeNom }) => {
     cacherTout(); show('screen-game'); show('custom-selection-section');
     el('gamePhase').innerText = "Préparation";
     el('gamePhase').style.background = "#6366f1";
 
     if (joueurId === socket.id) {
-        el('customHelperText').innerHTML = `C'est <b>ton tour</b> ! Choisis <span class="neon-text">${etapeNom}</span>.`;
+        el('customHelperText').innerHTML = `C'est <b>ton tour</b> ! Écris <span class="neon-text">${etapeNom}</span>.`;
         show('myCustomInputArea');
         el('customWordInput').value = "";
         el('customWordInput').focus();
     } else {
-        el('customHelperText').innerHTML = `<span class="neon-text">${pseudo}</span> choisit ${etapeNom}...`;
+        el('customHelperText').innerHTML = `<span class="neon-text">${pseudo}</span> écrit ${etapeNom}...`;
         hide('myCustomInputArea');
     }
 });
@@ -129,7 +124,6 @@ el('btnSoumettreCustom').addEventListener('click', () => {
 });
 
 
-// === PHASE REMPLISSAGE ===
 socket.on('debut_remplissage', ({ chaineDeBase, contrainte }) => {
     cacherTout(); show('screen-game'); show('filling-section'); show('floatingTimer');
 
@@ -199,8 +193,7 @@ function soumettreMaChaine() {
 
 socket.on('attente_autres_joueurs', () => show('wait-overlay'));
 
-// === PHASE LE TRIBUNAL ===
-socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotables, toutLeMondeAVote }) => {
+socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotables, toutLeMondeAVote, pseudosEnAttente }) => {
     cacherTout(); show('screen-game'); show('voting-section'); show('floatingTimer');
     el('gamePhase').innerText = "Le Tribunal";
     el('gamePhase').style.background = "#10b981";
@@ -217,7 +210,7 @@ socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotabl
     }
 
     if (toutLeMondeAVote) el('voteStatus').innerText = "✅ Tous les votes sont enregistrés !";
-    else el('voteStatus').innerText = "⏳ En attente des votes...";
+    else el('voteStatus').innerText = "⏳ En attente de : " + pseudosEnAttente.join(", ");
 
     chaine.forEach((mot, index) => {
         const stepDiv = document.createElement('div');
@@ -267,17 +260,21 @@ socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotabl
     });
 });
 
-socket.on('maj_votes_direct', ({ totaux, toutLeMondeAVote }) => {
+socket.on('maj_votes_direct', ({ totaux, toutLeMondeAVote, pseudosEnAttente }) => {
     for (const index in totaux) {
         const spanPour = el(`pour-${index}`);
         const spanContre = el(`contre-${index}`);
         if (spanPour) spanPour.innerText = `${totaux[index].pour} 👍`;
         if (spanContre) spanContre.innerText = `${totaux[index].contre} 👎`;
     }
-    if (toutLeMondeAVote) el('voteStatus').innerText = "✅ Tous les votes sont enregistrés ! 3... 2... 1...";
+
+    if (toutLeMondeAVote) {
+        el('voteStatus').innerText = "✅ Tous les votes sont enregistrés ! 3... 2... 1...";
+    } else {
+        el('voteStatus').innerText = "⏳ En attente de : " + pseudosEnAttente.join(", ");
+    }
 });
 
-// === PHASE CERVEAU GALACTIQUE ===
 socket.on('debut_vote_cerveau', (chainesData) => {
     cacherTout(); show('screen-game'); show('cerveau-section'); show('floatingTimer');
     el('gamePhase').innerText = "Vote Final";
@@ -308,7 +305,17 @@ socket.on('debut_vote_cerveau', (chainesData) => {
     });
 });
 
-// === FIN DE MANCHE (Relance direct) ===
+socket.on('maj_attente_cerveau', (pseudosEnAttente) => {
+    const statusEl = el('cerveauVoteStatus');
+    if (!statusEl) return;
+
+    if (pseudosEnAttente.length === 0) {
+        statusEl.innerText = "✅ Tous les votes sont enregistrés ! 3... 2... 1...";
+    } else {
+        statusEl.innerText = "⏳ En attente de : " + pseudosEnAttente.join(", ");
+    }
+});
+
 socket.on('fin_de_manche', ({ joueurs, cerveauNom }) => {
     cacherTout(); show('score-overlay');
 
