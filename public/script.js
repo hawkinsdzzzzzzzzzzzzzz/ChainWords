@@ -9,6 +9,18 @@ const el = id => document.getElementById(id);
 const show = id => el(id).classList.remove('hidden');
 const hide = id => el(id).classList.add('hidden');
 
+// === SYSTEME DE NOTIFICATIONS (TOASTS) ===
+function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerText = msg;
+    el('toastContainer').appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = "fadeOutToast 0.3s ease-out forwards";
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
 function cacherTout() {
     hide('screen-home'); hide('screen-invite'); hide('screen-lobby');
     hide('screen-game'); hide('wait-overlay'); hide('score-overlay');
@@ -191,7 +203,25 @@ function soumettreMaChaine() {
     socket.emit('soumettre_chaine', { codeSalon: monCodeSalon, chaineRemplie: maChaineFinale });
 }
 
-socket.on('attente_autres_joueurs', () => show('wait-overlay'));
+// L'évenement quand N'IMPORTE QUI finit sa chaîne (feed + maj liste d'attente)
+socket.on('joueur_a_fini', ({ pseudo, enAttente }) => {
+    showToast(`${pseudo} a terminé sa chaîne !`);
+
+    // Si l'overlay est affiché chez moi, je mets à jour la liste des retardataires
+    if (enAttente.length > 0) {
+        el('waitingForPseudos').innerText = "Encore en jeu : " + enAttente.join(", ");
+    } else {
+        el('waitingForPseudos').innerText = "Tout le monde a fini !";
+    }
+});
+
+// Quand MOI je finis, j'affiche l'overlay
+socket.on('attente_autres_joueurs', (enAttente) => {
+    show('wait-overlay');
+    if (enAttente && enAttente.length > 0) {
+        el('waitingForPseudos').innerText = "Encore en jeu : " + enAttente.join(", ");
+    }
+});
 
 socket.on('tour_de_vote', ({ joueurEvalueId, pseudoEvalue, chaine, indicesVotables, toutLeMondeAVote, pseudosEnAttente }) => {
     cacherTout(); show('screen-game'); show('voting-section'); show('floatingTimer');
@@ -298,6 +328,7 @@ socket.on('debut_vote_cerveau', (chainesData) => {
                 socket.emit('voter_cerveau', { codeSalon: monCodeSalon, votedForId: data.id });
                 hide('cerveau-section');
                 show('wait-overlay');
+                el('waitingForPseudos').innerText = ""; // On vide la liste pour l'overlay d'attente
             }
         });
 
@@ -311,8 +342,10 @@ socket.on('maj_attente_cerveau', (pseudosEnAttente) => {
 
     if (pseudosEnAttente.length === 0) {
         statusEl.innerText = "✅ Tous les votes sont enregistrés ! 3... 2... 1...";
+        el('waitingForPseudos').innerText = "Tout le monde a voté !";
     } else {
         statusEl.innerText = "⏳ En attente de : " + pseudosEnAttente.join(", ");
+        el('waitingForPseudos').innerText = "⏳ En attente de : " + pseudosEnAttente.join(", ");
     }
 });
 

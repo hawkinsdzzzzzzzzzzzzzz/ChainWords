@@ -52,7 +52,6 @@ function verifierSiToutLeMondeAVote(salon) {
     return expectedVotes === 0 || totalVotesCast >= expectedVotes;
 }
 
-// Récupère les pseudos de ceux qui n'ont pas encore fini de voter au tribunal
 function getPseudosEnAttenteTribunal(salon) {
     const joueurEvalueId = salon.ordreVote[salon.indexVoteCourant];
     const votantsAttendus = Object.keys(salon.joueurs).filter(id => id !== joueurEvalueId);
@@ -62,7 +61,6 @@ function getPseudosEnAttenteTribunal(salon) {
     return enAttente.map(id => salon.joueurs[id].pseudo);
 }
 
-// Récupère les pseudos de ceux qui n'ont pas encore voté pour le cerveau galactique
 function getPseudosEnAttenteCerveau(salon) {
     const votantsAttendus = Object.keys(salon.joueurs);
     const enAttente = votantsAttendus.filter(id => !salon.votesCerveau[id]);
@@ -98,7 +96,7 @@ io.on('connection', (socket) => {
             chaineDeBase: [], indicesVotables: [], ordreVote: [],
             indexVoteCourant: 0, votesEnCours: {}, temps: 0,
             motsPersoEnCours: [], etapesPerso: ["le 1er mot mystère", "le 2ème mot mystère", "le 3ème mot mystère"],
-            joueurChoixCourant: null
+            joueurChoixCourant: null, joueursAyantChoisi: [] // Pour éviter qu'un joueur écrive 2 mots
         };
         salons[code].joueurs[socket.id] = { pseudo: pseudo, score: 0, chaineJoueur: [], aFini: false };
         socket.emit('salon_cree', code);
@@ -129,12 +127,16 @@ io.on('connection', (socket) => {
                 salon.joueurs[id].chaineJoueur = [];
             }
 
-            if (salon.config.mode === 'custom') demarrerChoixPersonnalise(codeSalon);
-            else lancerPhaseRemplissage(codeSalon, motsAuto[Math.floor(Math.random() * motsAuto.length)]);
+            if (salon.config.mode === 'custom') {
+                salon.joueursAyantChoisi = []; // Réinitialise pour la nouvelle manche
+                demarrerChoixPersonnalise(codeSalon);
+            } else {
+                lancerPhaseRemplissage(codeSalon, motsAuto[Math.floor(Math.random() * motsAuto.length)]);
+            }
         }
     });
 
-    // --- PHASE 1.5 : CHOIX DES MOTS (MYSTÈRES & ALÉATOIRES) ---
+    // --- PHASE CUSTOM (RÈGLE DES JOUEURS UNIQUES) ---
     function demarrerChoixPersonnalise(codeSalon) {
         const salon = salons[codeSalon];
         salon.etat = 'choix_custom';
@@ -145,16 +147,24 @@ io.on('connection', (socket) => {
     function passerAuChoixCustom(codeSalon) {
         const salon = salons[codeSalon];
         if (salon.motsPersoEnCours.length === 3) {
-            // LES MOTS SONT MÉLANGÉS ALÉATOIREMENT AVANT LA PARTIE
             const motsMelanges = [...salon.motsPersoEnCours].sort(() => Math.random() - 0.5);
             lancerPhaseRemplissage(codeSalon, motsMelanges);
             return;
         }
 
         const joueursIds = Object.keys(salon.joueurs);
-        // Joueur choisi aléatoirement pour écrire le mot
-        const indexAleatoire = Math.floor(Math.random() * joueursIds.length);
-        salon.joueurChoixCourant = joueursIds[indexAleatoire];
+        // Filtrer pour ne prendre que ceux qui n'ont pas encore écrit de mot
+        let joueursDispos = joueursIds.filter(id => !salon.joueursAyantChoisi.includes(id));
+
+        // Sécurité si tout le monde a déjà écrit (ex: s'ils sont que 2 joueurs pour 3 mots)
+        if (joueursDispos.length === 0) {
+            salon.joueursAyantChoisi = [];
+            joueursDispos = joueursIds;
+        }
+
+        const indexAleatoire = Math.floor(Math.random() * joueursDispos.length);
+        salon.joueurChoixCourant = joueursDispos[indexAleatoire];
+        salon.joueursAyantChoisi.push(salon.joueurChoixCourant); // On l'ajoute à la liste des "déjà passés"
 
         io.to(codeSalon).emit('tour_choix_custom', {
             joueurId: salon.joueurChoixCourant,
@@ -171,6 +181,7 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- PHASE REMPLISSAGE ---
     function lancerPhaseRemplissage(codeSalon, motsImposes) {
         const salon = salons[codeSalon];
         salon.etat = 'remplissage';
@@ -225,19 +236,29 @@ io.on('connection', (socket) => {
             salon.joueurs[socket.id].chaineJoueur = chaineRemplie;
             salon.joueurs[socket.id].aFini = true;
 
+            const enAttente = Object.values(salon.joueurs).filter(j => !j.aFini).map(j => j.pseudo);
+
+            // On notifie tout le monde qu'un joueur a fini (pour le Feed en haut à droite)
+            io.to(codeSalon).emit('joueur_a_fini', {
+                pseudo: salon.joueurs[socket.id].pseudo,
+                enAttente: enAttente
+            });
+
             if (Object.values(salon.joueurs).every(j => j.aFini)) {
                 clearSalonTimer(salon);
                 demarrerPhaseVote(codeSalon);
             } else {
-                socket.emit('attente_autres_joueurs');
+                socket.emit('attente_autres_joueurs', enAttente);
             }
         }
     });
 
+    // --- PHASE TRIBUNAL (ORDRE ALÉATOIRE) ---
     function demarrerPhaseVote(codeSalon) {
         const salon = salons[codeSalon];
         salon.etat = 'vote';
-        salon.ordreVote = Object.keys(salon.joueurs);
+        // L'ordre du tribunal est mélangé aléatoirement !
+        salon.ordreVote = Object.keys(salon.joueurs).sort(() => Math.random() - 0.5);
         salon.indexVoteCourant = 0;
         lancerTourDeVote(codeSalon);
     }
@@ -255,7 +276,7 @@ io.on('connection', (socket) => {
             joueurEvalueId: joueurEvalueId, pseudoEvalue: joueurEvalue.pseudo,
             chaine: joueurEvalue.chaineJoueur, indicesVotables: salon.indicesVotables,
             toutLeMondeAVote: toutLeMondeAVote,
-            pseudosEnAttente: getPseudosEnAttenteTribunal(salon) // On envoie qui on attend
+            pseudosEnAttente: getPseudosEnAttenteTribunal(salon)
         });
 
         clearSalonTimer(salon);
@@ -282,7 +303,7 @@ io.on('connection', (socket) => {
                 io.to(codeSalon).emit('maj_votes_direct', {
                     totaux: getTotauxVotes(salon),
                     toutLeMondeAVote: done,
-                    pseudosEnAttente: getPseudosEnAttenteTribunal(salon) // MAJ de la liste
+                    pseudosEnAttente: getPseudosEnAttenteTribunal(salon)
                 });
 
                 if (done && salon.temps > 3) salon.temps = 3;
@@ -310,6 +331,7 @@ io.on('connection', (socket) => {
         else demarrerVoteCerveau(codeSalon);
     }
 
+    // --- PHASE CERVEAU GALACTIQUE ---
     function demarrerVoteCerveau(codeSalon) {
         const salon = salons[codeSalon];
         salon.etat = 'vote_cerveau';
@@ -321,7 +343,6 @@ io.on('connection', (socket) => {
         }
 
         io.to(codeSalon).emit('debut_vote_cerveau', chainesData);
-        // On envoie directement la liste de tous ceux qui doivent voter
         io.to(codeSalon).emit('maj_attente_cerveau', getPseudosEnAttenteCerveau(salon));
 
         clearSalonTimer(salon);
@@ -345,8 +366,6 @@ io.on('connection', (socket) => {
             const nbJoueurs = Object.keys(salon.joueurs).length;
 
             if (nbVotants >= nbJoueurs && salon.temps > 3) salon.temps = 3;
-
-            // Mise à jour de ceux qui n'ont pas encore cliqué
             io.to(codeSalon).emit('maj_attente_cerveau', getPseudosEnAttenteCerveau(salon));
         }
     });
@@ -368,19 +387,18 @@ io.on('connection', (socket) => {
                 maxVotes = compteVotes[id];
                 vainqueursIds = [id];
             } else if (compteVotes[id] === maxVotes) {
-                vainqueursIds.push(id); // Plusieurs joueurs ont le même score
+                vainqueursIds.push(id);
             }
         }
 
         let nomsVainqueurs = "Personne";
         if (maxVotes > 0) {
-            // S'il y a égalité parfaite, on tire un seul gagnant au sort parmi eux !
             if (vainqueursIds.length > 1) {
                 const gagnantAleatoire = vainqueursIds[Math.floor(Math.random() * vainqueursIds.length)];
                 vainqueursIds = [gagnantAleatoire];
             }
             nomsVainqueurs = salon.joueurs[vainqueursIds[0]].pseudo;
-            salon.joueurs[vainqueursIds[0]].score += 3; // +3 points au grand vainqueur
+            salon.joueurs[vainqueursIds[0]].score += 3;
         }
 
         salon.etat = 'attente';
